@@ -679,14 +679,16 @@ export default function SyllabusPage() {
                       </p>
 
                       <div className="mt-4 grid grid-cols-1 gap-2 text-left text-xs sm:grid-cols-2">
-                        {[
-                          [15, "Reading syllabus"],
-                          [30, "Extracting topics"],
-                          [50, "Understanding units"],
-                          [70, "Structuring analysis"],
-                          [85, "Finalizing analysis"],
-                          [100, "Analysis complete"],
-                        ].map(([progress, label]) => (
+                        {(
+                          [
+                            [15, "Reading syllabus"],
+                            [30, "Extracting topics"],
+                            [50, "Understanding units"],
+                            [70, "Structuring analysis"],
+                            [85, "Finalizing analysis"],
+                            [100, "Analysis complete"],
+                          ] as const
+                        ).map(([progress, label]) => (
                           <div
                             key={label}
                             className={`flex items-center justify-between rounded-lg px-2 py-1 ${
