@@ -1,366 +1,349 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
-  AlertCircle,
   BookOpen,
+  Brain,
+  CalendarDays,
   CheckCircle2,
-  FileText,
-  Sparkles,
-  Upload,
-  X,
+  ClipboardCheck,
+  Clock3,
+  LogOut,
+  Target,
+  TrendingUp,
+  User,
 } from "lucide-react";
 
-type Unit = {
-  unit: number;
-  title: string;
-  topics: string[];
-  difficulty: string;
-  important: boolean;
+const API_URL = "http://127.0.0.1:8000";
+
+type UserData = {
+  id: number;
+  name: string;
+  email: string;
 };
 
-type Analysis = {
-  course_name: string;
-  course_level: string;
-  units: Unit[];
-  important_topics: string[];
-};
+const stats = [
+  {
+    title: "Topics Completed",
+    value: "0",
+    icon: CheckCircle2,
+    description: "Start learning to see progress",
+  },
+  {
+    title: "Study Hours",
+    value: "0h",
+    icon: Clock3,
+    description: "Your total learning time",
+  },
+  {
+    title: "Tests Completed",
+    value: "0",
+    icon: ClipboardCheck,
+    description: "No tests completed yet",
+  },
+  {
+    title: "Current Streak",
+    value: "0 days",
+    icon: TrendingUp,
+    description: "Start your learning streak",
+  },
+];
 
-type ApiResponse = {
-  message: string;
-  filename: string;
-  status: string;
-  analysis: Analysis;
-};
+const quickActions = [
+  {
+    title: "Upload Syllabus",
+    description: "Let AI analyze your syllabus",
+    icon: BookOpen,
+    href: "/syllabus",
+  },
+  {
+    title: "Study Plan",
+    description: "Create your personalized plan",
+    icon: CalendarDays,
+    href: "/syllabus",
+  },
+  {
+    title: "Start Learning",
+    description: "Continue your learning journey",
+    icon: Brain,
+    href: "/syllabus",
+  },
+  {
+    title: "Take a Test",
+    description: "Test your knowledge",
+    icon: ClipboardCheck,
+    href: "/syllabus",
+  },
+];
 
-export default function SyllabusPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<ApiResponse | null>(null);
-  const [error, setError] = useState("");
+export default function DashboardPage() {
+  const router = useRouter();
 
-  function validateFile(selectedFile: File) {
-    setError("");
-    setResult(null);
+  const [user, setUser] = useState<UserData | null>(null);
+  const [loading, setLoading] = useState(true);
 
-    const allowedTypes = [
-      "application/pdf",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+  useEffect(() => {
+    async function loadUser() {
+      const token = localStorage.getItem("access_token");
 
-    const maxSize = 10 * 1024 * 1024;
-
-    if (!allowedTypes.includes(selectedFile.type)) {
-      setError("Please upload a PDF or DOCX file.");
-      return;
-    }
-
-    if (selectedFile.size > maxSize) {
-      setError("File size must be less than 10 MB.");
-      return;
-    }
-
-    setFile(selectedFile);
-  }
-
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const selectedFile = event.target.files?.[0];
-
-    if (selectedFile) {
-      validateFile(selectedFile);
-    }
-  }
-
-  function handleDrop(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setIsDragging(false);
-
-    const droppedFile = event.dataTransfer.files?.[0];
-
-    if (droppedFile) {
-      validateFile(droppedFile);
-    }
-  }
-
-  function removeFile() {
-    setFile(null);
-    setResult(null);
-    setError("");
-  }
-
-  async function analyzeSyllabus() {
-    if (!file) {
-      setError("Please select a syllabus first.");
-      return;
-    }
-
-    setLoading(true);
-    setError("");
-    setResult(null);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const response = await fetch(
-        "http://127.0.0.1:8000/api/syllabus/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.detail || "Syllabus analysis failed.");
+      if (!token) {
+        router.replace("/login");
+        return;
       }
 
-      setResult(data);
-    } catch (error) {
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Unable to connect to Learnova AI backend."
-      );
-    } finally {
-      setLoading(false);
+      try {
+        const response = await fetch(`${API_URL}/api/auth/me`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          localStorage.removeItem("access_token");
+          localStorage.removeItem("user");
+          router.replace("/login");
+          return;
+        }
+
+        const data = await response.json();
+
+        setUser(data);
+        localStorage.setItem("user", JSON.stringify(data));
+      } catch (error) {
+        console.error("User fetch failed:", error);
+
+        const savedUser = localStorage.getItem("user");
+
+        if (savedUser) {
+          try {
+            setUser(JSON.parse(savedUser));
+          } catch {
+            localStorage.removeItem("user");
+            router.replace("/login");
+          }
+        } else {
+          router.replace("/login");
+        }
+      } finally {
+        setLoading(false);
+      }
     }
+
+    loadUser();
+  }, [router]);
+
+  function handleLogout() {
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("user");
+    router.replace("/login");
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#07070a] text-white">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-zinc-700 border-t-violet-400" />
+          <p className="text-sm text-zinc-400">
+            Loading your dashboard...
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-[#07070a] px-6 py-10 text-white md:px-10">
-      <div className="mx-auto max-w-6xl">
+    <div className="min-h-screen bg-[#07070a] text-white">
+      {/* Background Glow */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-96 w-96 rounded-full bg-violet-600/10 blur-3xl" />
+        <div className="absolute -bottom-40 -right-40 h-96 w-96 rounded-full bg-blue-600/10 blur-3xl" />
+      </div>
+
+      <div className="relative p-6 md:p-8">
         {/* Header */}
-        <div className="mb-10">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/10">
-            <Sparkles className="text-violet-400" size={24} />
-          </div>
+        <header className="mb-8">
+          <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="mb-2 text-sm font-medium text-violet-400">
+                Welcome back 👋
+              </p>
 
-          <h1 className="text-3xl font-bold md:text-4xl">
-            Upload Your Syllabus
-          </h1>
+              <h1 className="text-3xl font-bold tracking-tight md:text-4xl">
+                {user?.name
+                  ? `Welcome, ${user.name}`
+                  : "Your Learning Dashboard"}
+              </h1>
 
-          <p className="mt-3 max-w-2xl text-zinc-400">
-            Upload your syllabus and let Learnova AI analyze your subjects,
-            units, topics, difficulty levels, and important concepts.
-          </p>
-        </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400 md:text-base">
+                Manage your syllabus, follow your study plan, learn smarter,
+                and track your progress with Learnova AI.
+              </p>
+            </div>
 
-        {/* Upload */}
-        {!result && (
-          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl md:p-8">
-            {!file ? (
-              <div
-                onDragOver={(event) => {
-                  event.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                className={`flex min-h-[300px] flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition ${
-                  isDragging
-                    ? "border-violet-400 bg-violet-500/10"
-                    : "border-white/10 hover:border-violet-500/40"
-                }`}
-              >
-                <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-500/10">
-                  <Upload className="text-violet-400" size={30} />
+            {/* User Information */}
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-xl md:min-w-[280px]">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10">
+                  <User className="text-violet-400" size={21} />
                 </div>
 
-                <h2 className="text-xl font-semibold">
-                  Drop your syllabus here
-                </h2>
+                <div className="min-w-0">
+                  <p className="font-semibold">
+                    {user?.name || "User"}
+                  </p>
 
-                <p className="mt-2 text-sm text-zinc-500">
-                  or choose a file from your computer
-                </p>
-
-                <label className="mt-6 cursor-pointer rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black hover:bg-zinc-200">
-                  Choose File
-
-                  <input
-                    type="file"
-                    accept=".pdf,.docx"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                </label>
-
-                <p className="mt-5 text-xs text-zinc-600">
-                  PDF / DOCX • Maximum 10 MB
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-6">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-violet-500/10">
-                      <FileText className="text-violet-400" size={24} />
-                    </div>
-
-                    <div>
-                      <h2 className="font-semibold">{file.name}</h2>
-                      <p className="mt-1 text-sm text-zinc-500">
-                        {(file.size / 1024 / 1024).toFixed(2)} MB
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={removeFile}
-                    className="rounded-lg p-2 text-zinc-500 hover:bg-white/10 hover:text-white"
-                  >
-                    <X size={20} />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={analyzeSyllabus}
-                  disabled={loading}
-                  className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 font-semibold transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <Sparkles size={18} />
-                  {loading ? "AI is analyzing..." : "Analyze with Learnova AI"}
-                </button>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="mt-5 flex items-center gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
-            <AlertCircle size={18} />
-            {error}
-          </div>
-        )}
-
-        {/* AI Result */}
-        {result?.analysis && (
-          <section className="mt-8">
-            {/* Course overview */}
-            <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl md:p-8">
-              <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="flex items-center gap-2 text-sm text-emerald-400">
-                    <CheckCircle2 size={17} />
-                    AI Analysis Complete
-                  </div>
-
-                  <h2 className="mt-3 text-3xl font-bold">
-                    {result.analysis.course_name}
-                  </h2>
-
-                  <p className="mt-2 text-zinc-400">
-                    Level: {result.analysis.course_level}
+                  <p className="truncate text-sm text-zinc-500">
+                    {user?.email || "Email unavailable"}
                   </p>
                 </div>
-
-                <div className="flex items-center gap-3 rounded-2xl bg-violet-500/10 px-5 py-4">
-                  <BookOpen className="text-violet-400" />
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {result.analysis.units.length}
-                    </p>
-                    <p className="text-xs text-zinc-500">Units detected</p>
-                  </div>
-                </div>
               </div>
-            </div>
 
-            {/* Important Topics */}
-            <div className="mt-6 rounded-3xl border border-white/10 bg-white/[0.04] p-6 md:p-8">
-              <h2 className="text-xl font-semibold">
-                Important Topics
-              </h2>
+              <div className="mt-4 border-t border-white/10 pt-3">
+                <p className="text-xs text-zinc-500">
+                  User ID
+                </p>
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {result.analysis.important_topics.map((topic) => (
-                  <span
-                    key={topic}
-                    className="rounded-full border border-violet-500/20 bg-violet-500/10 px-4 py-2 text-sm text-violet-300"
-                  >
-                    {topic}
-                  </span>
-                ))}
+                <p className="mt-1 font-mono text-sm font-semibold text-violet-300">
+                  #{user?.id ?? "—"}
+                </p>
               </div>
-            </div>
-
-            {/* Units */}
-            <div className="mt-6">
-              <h2 className="mb-4 text-xl font-semibold">
-                Course Units
-              </h2>
-
-              <div className="space-y-4">
-                {result.analysis.units.map((unit) => (
-                  <div
-                    key={unit.unit}
-                    className="rounded-3xl border border-white/10 bg-white/[0.04] p-6"
-                  >
-                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                      <div>
-                        <p className="text-sm text-violet-400">
-                          Unit {unit.unit}
-                        </p>
-
-                        <h3 className="mt-1 text-xl font-semibold">
-                          {unit.title}
-                        </h3>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-zinc-400">
-                          {unit.difficulty}
-                        </span>
-
-                        {unit.important && (
-                          <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-400">
-                            Important
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-5 grid gap-2 md:grid-cols-2">
-                      {unit.topics.map((topic) => (
-                        <div
-                          key={topic}
-                          className="rounded-xl border border-white/5 bg-black/20 px-4 py-3 text-sm text-zinc-300"
-                        >
-                          {topic}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Next action */}
-            <div className="mt-8 rounded-3xl border border-violet-500/20 bg-violet-500/5 p-6 text-center md:p-8">
-              <h2 className="text-2xl font-bold">
-                Your syllabus is ready 🎓
-              </h2>
-
-              <p className="mx-auto mt-2 max-w-xl text-sm text-zinc-400">
-                Next, Learnova AI can use these topics to create a
-                personalized study plan.
-              </p>
 
               <button
                 type="button"
-                className="mt-5 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black hover:bg-zinc-200"
+                onClick={handleLogout}
+                className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-2.5 text-sm font-medium text-red-400 transition hover:bg-red-500/10"
               >
-                Generate Study Plan →
+                <LogOut size={17} />
+                Logout
               </button>
             </div>
-          </section>
-        )}
+          </div>
+        </header>
+
+        {/* Progress */}
+        <section className="mb-8">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-semibold">
+                Your Progress
+              </h2>
+
+              <p className="text-sm text-zinc-500">
+                Keep building your learning journey
+              </p>
+            </div>
+
+            <Target className="text-violet-400" size={22} />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {stats.map((stat) => {
+              const Icon = stat.icon;
+
+              return (
+                <div
+                  key={stat.title}
+                  className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl transition hover:border-violet-500/30 hover:bg-white/[0.06]"
+                >
+                  <div className="mb-5 flex items-center justify-between">
+                    <div className="rounded-xl bg-violet-500/10 p-3">
+                      <Icon
+                        size={20}
+                        className="text-violet-400"
+                      />
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-zinc-400">
+                    {stat.title}
+                  </p>
+
+                  <h3 className="mt-1 text-2xl font-bold">
+                    {stat.value}
+                  </h3>
+
+                  <p className="mt-2 text-xs text-zinc-500">
+                    {stat.description}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Quick Actions */}
+        <section className="mb-8">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">
+              Quick Actions
+            </h2>
+
+            <p className="text-sm text-zinc-500">
+              Choose what you want to do next
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {quickActions.map((action) => {
+              const Icon = action.icon;
+
+              return (
+                <a
+                  key={action.title}
+                  href={action.href}
+                  className="group rounded-2xl border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl transition hover:-translate-y-1 hover:border-violet-500/40 hover:bg-white/[0.07]"
+                >
+                  <div className="mb-5 flex h-11 w-11 items-center justify-center rounded-xl bg-violet-500/10">
+                    <Icon
+                      size={21}
+                      className="text-violet-400 transition group-hover:scale-110"
+                    />
+                  </div>
+
+                  <h3 className="font-semibold">
+                    {action.title}
+                  </h3>
+
+                  <p className="mt-2 text-sm leading-5 text-zinc-500">
+                    {action.description}
+                  </p>
+
+                  <div className="mt-4 text-sm font-medium text-violet-400">
+                    Open →
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* Getting Started */}
+        <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-violet-500/[0.10] to-blue-500/[0.05] p-6 backdrop-blur-xl md:p-8">
+          <div className="max-w-2xl">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-500/10">
+              <Brain className="text-violet-400" size={24} />
+            </div>
+
+            <h2 className="text-2xl font-bold">
+              Start with your syllabus
+            </h2>
+
+            <p className="mt-3 text-sm leading-6 text-zinc-400 md:text-base">
+              Upload your syllabus and let Learnova AI understand your
+              subjects, units, and topics. We&apos;ll use that information to
+              build your personalized learning journey.
+            </p>
+
+            <a
+              href="/syllabus"
+              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black transition hover:bg-zinc-200"
+            >
+              <BookOpen size={18} />
+              Upload Syllabus
+            </a>
+          </div>
+        </section>
       </div>
     </div>
   );
