@@ -24,4 +24,6 @@ out/
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbbackend/uploads/
+
+backend/uploads/
