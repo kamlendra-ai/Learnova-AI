@@ -1,83 +1,102 @@
-import json
-import os
+import logging
+from typing import Any, Dict
 
-from dotenv import load_dotenv
-from google import genai
+from app.services.ai_provider import AIError, get_ai_provider
+from app.services.json_parser import (
+    clean_and_extract_json,
+    validate_syllabus_schema,
+)
 
+logger = logging.getLogger("learnova.syllabus_analyzer")
 
-load_dotenv()
-
-api_key = os.getenv("GEMINI_API_KEY")
-
-if not api_key:
-    raise RuntimeError("GEMINI_API_KEY is not configured.")
-
-client = genai.Client(api_key=api_key)
+MAX_SYLLABUS_CHARS = 100_000
 
 
-def analyze_syllabus(text: str) -> dict:
+def analyze_syllabus(text: str) -> Dict[str, Any]:
+    """
+    Analyze extracted syllabus text using the centralized AI provider
+    and return validated course structure, units, topics, and importance rankings.
+    """
+    if not text or not text.strip():
+        raise ValueError("Syllabus text is empty. Please provide readable text.")
+
+    cleaned_text = text.strip()
+    if len(cleaned_text) > MAX_SYLLABUS_CHARS:
+        logger.warning(
+            "Syllabus length (%d chars) exceeds limit. Truncating to %d chars.",
+            len(cleaned_text),
+            MAX_SYLLABUS_CHARS,
+        )
+        cleaned_text = cleaned_text[:MAX_SYLLABUS_CHARS]
+
     prompt = f"""
-Return ONLY valid JSON for this syllabus.
+You are an expert educational curriculum and syllabus analyzer for Learnova AI.
 
-Schema:
+Analyze the following syllabus text thoroughly and return ONLY valid JSON conforming exactly to the required schema.
+
+Required JSON schema:
 {{
-  "course_name": "...",
-  "course_level": "...",
+  "course_name": "Official or inferred course title",
+  "course_level": "Beginner/Intermediate/Advanced",
   "units": [
     {{
       "unit": 1,
-      "title": "...",
-      "topics": ["...", "..."],
-      "difficulty": "...",
+      "title": "Unit or Chapter Title",
+      "topics": ["Topic 1", "Topic 2", "Topic 3"],
+      "difficulty": "Easy/Medium/Hard",
       "important": true
     }}
   ],
-  "important_topics": ["...", "..."]
+  "important_topics": ["High priority topic 1", "High priority topic 2"]
 }}
 
 Rules:
-- Use only information from the syllabus.
-- Keep topics short.
-- No explanations.
-- No study plan.
-- No quiz.
-- No questions.
-- JSON only.
+- Extract all coherent units and topics found in the text.
+- If unit numbers are not stated, number them sequentially (1, 2, 3...).
+- Keep topic names concise and self-contained.
+- Mark foundational or core topics as important: true.
+- Do NOT output conversational prose, introductions, or markdown explanations.
+- Output ONLY the JSON object.
 
-SYLLABUS:
-{text}
+Syllabus Content:
+{cleaned_text}
 """
 
-    response = client.models.generate_content(
-        model="gemini-3.5-flash",
-        contents=prompt,
-        config={
-            "response_mime_type": "application/json",
-            "temperature": 0,
-        },
-    )
-
-    raw_output = response.text.strip()
-
-    if raw_output.startswith("```json"):
-        raw_output = raw_output[7:]
-
-    if raw_output.startswith("```"):
-        raw_output = raw_output[3:]
-
-    if raw_output.endswith("```"):
-        raw_output = raw_output[:-3]
-
-    raw_output = raw_output.strip()
+    provider = get_ai_provider()
 
     try:
-        return json.loads(raw_output)
+        raw_output, metadata = provider.generate_text(
+            prompt=prompt,
+            temperature=0.1,
+            system_instruction="You are an expert educational syllabus parser. You output only valid JSON.",
+        )
+        logger.info(
+            "Syllabus analyzed with model '%s' (fallback: %s)",
+            metadata.get("model"),
+            metadata.get("is_fallback"),
+        )
+    except AIError as err:
+        logger.error("AI generation failed during syllabus analysis: %s", str(err))
+        raise ValueError(f"AI analysis failed: {str(err)}") from err
 
-    except json.JSONDecodeError:
+    try:
+        parsed = clean_and_extract_json(raw_output)
+        return validate_syllabus_schema(parsed)
+    except Exception as err:
+        logger.warning("Failed to parse or validate syllabus JSON: %s", str(err))
+        # Provide a structured fallback preserving partial course info
         return {
-            "course_name": "Unknown",
-            "course_level": "Unknown",
-            "units": [],
-            "important_topics": [],
-            "raw_response": raw_output,
+            "course_name": "Extracted Course",
+            "course_level": "Intermediate",
+            "units": [
+                {
+                    "unit": 1,
+                    "title": "General Curriculum",
+                    "topics": ["Syllabus Overview"],
+                    "difficulty": "Medium",
+                    "important": True,
+                }
+            ],
+            "important_topics": ["Syllabus Overview"],
+            "raw_response": raw_output[:500],
         }

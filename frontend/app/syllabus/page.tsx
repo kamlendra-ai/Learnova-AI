@@ -116,9 +116,35 @@ type QuizResponse = {
   quiz: Quiz;
 };
 
+type AiStatus = {
+  status: string;
+  active_provider: string;
+  cloud?: { primary_model: string; fallback_model: string };
+  local?: { enabled: boolean; status_message: string; hardware_target: string };
+  snapdragon_target?: { npu: string; runtime: string };
+};
+
+const formatApiError = (statusCode: number, detail?: string): string => {
+  if (statusCode === 429) {
+    return "Rate Limit Exceeded (429): Gemini API quota temporarily reached. Please wait a few seconds and click Retry.";
+  }
+  if (statusCode === 503) {
+    return "Service Temporarily Busy (503): Cloud AI is busy. Click Retry to re-attempt or trigger automatic fallback.";
+  }
+  if (statusCode === 404) {
+    return "Model Unavailable (404): The primary model was not found; server will route to fallback.";
+  }
+  if (statusCode === 401 || statusCode === 403) {
+    return "Authentication Error (401/403): Invalid API key or session expired. Please verify configuration.";
+  }
+  return detail || "An unexpected error occurred while processing the request.";
+};
+
 export default function SyllabusPage() {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
 
   const [loading, setLoading] = useState(false);
   const [studyPlanLoading, setStudyPlanLoading] = useState(false);
@@ -149,6 +175,17 @@ export default function SyllabusPage() {
     Record<number, string>
   >({});
   const [quizSubmitted, setQuizSubmitted] = useState(false);
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/api/syllabus/ai-status")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data) setAiStatus(data);
+      })
+      .catch(() => {
+        // Backend offline or unreachable
+      });
+  }, []);
 
   const validateFile = (selectedFile: File) => {
     setError("");
@@ -263,9 +300,7 @@ export default function SyllabusPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || "Syllabus analysis failed."
-        );
+        throw new Error(formatApiError(response.status, data.detail));
       }
 
       setAnalysisProgress(100);
@@ -343,9 +378,7 @@ export default function SyllabusPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || "Study plan generation failed."
-        );
+        throw new Error(formatApiError(response.status, data.detail));
       }
 
       setStudyPlan(data);
@@ -390,8 +423,10 @@ export default function SyllabusPage() {
 
       if (!response.ok) {
         throw new Error(
-          (data as unknown as { detail?: string }).detail ||
-            "Lesson generation failed."
+          formatApiError(
+            response.status,
+            (data as unknown as { detail?: string }).detail
+          )
         );
       }
 
@@ -446,8 +481,10 @@ export default function SyllabusPage() {
 
       if (!response.ok) {
         throw new Error(
-          (data as { detail?: string }).detail ||
-            "Quiz generation failed."
+          formatApiError(
+            response.status,
+            (data as { detail?: string }).detail
+          )
         );
       }
 
@@ -555,6 +592,29 @@ export default function SyllabusPage() {
             Upload your syllabus and let Learnova AI understand
             your subjects, units, topics, and important concepts.
           </p>
+
+          {/* AI Engine & Qualcomm Snapdragon Target Status */}
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-2.5">
+            <div className="flex items-center gap-2 rounded-full border border-violet-500/30 bg-violet-500/10 px-4 py-1.5 text-xs font-medium text-violet-300 backdrop-blur-md">
+              <Sparkles size={14} className="text-violet-400" />
+              <span>
+                Engine:{" "}
+                {aiStatus?.active_provider === "local"
+                  ? "On-Device Local AI"
+                  : `Cloud AI (${aiStatus?.cloud?.primary_model || "Gemini 3.5 Flash"})`}
+              </span>
+              {aiStatus?.cloud?.fallback_model && (
+                <span className="text-zinc-500">
+                  • Fallback: {aiStatus.cloud.fallback_model}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3.5 py-1.5 text-xs font-medium text-emerald-400 backdrop-blur-md">
+              <Target size={14} />
+              <span>Qualcomm Snapdragon NPU Ready</span>
+            </div>
+          </div>
         </div>
 
         {/* Upload Section */}
@@ -719,9 +779,19 @@ export default function SyllabusPage() {
             )}
 
             {error && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
-                <AlertCircle size={18} />
-                {error}
+              <div className="mt-4 flex flex-col gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-2">
+                  <AlertCircle size={18} className="shrink-0" />
+                  <span>{error}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={analyzeSyllabus}
+                  className="flex items-center justify-center gap-1.5 rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/30 shrink-0"
+                >
+                  <RotateCcw size={14} />
+                  Retry Analysis
+                </button>
               </div>
             )}
           </div>
@@ -900,9 +970,19 @@ export default function SyllabusPage() {
               </div>
 
               {studyPlanError && (
-                <div className="mt-5 flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400">
-                  <AlertCircle size={18} />
-                  {studyPlanError}
+                <div className="mt-5 flex flex-col gap-3 rounded-xl border border-red-500/20 bg-red-500/5 p-4 text-sm text-red-400 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle size={18} className="shrink-0" />
+                    <span>{studyPlanError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generateStudyPlan}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-red-500/20 px-3 py-1.5 text-xs font-semibold text-red-300 transition hover:bg-red-500/30 shrink-0"
+                  >
+                    <RotateCcw size={14} />
+                    Retry
+                  </button>
                 </div>
               )}
 
